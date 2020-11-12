@@ -6,6 +6,12 @@ Implementation of cubic stylization algorithm using Libigl C++ library.
 Boilerplate CMake/build files from the introduction assignment is used:
 https://github.com/alecjacobson/geometry-processing-introduction
 
+Commands to build:
+mkdir build
+cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make
+
 Link to paper: https://www.dgp.toronto.edu/projects/cubic-stylization/cubicStyle_high.pdf
 
 Run with command line arguments, file name and starting lambda value:
