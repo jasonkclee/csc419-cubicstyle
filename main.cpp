@@ -16,7 +16,7 @@ MatrixXd get_cube_style(MatrixXd origV, MatrixXi F, double m_lambda){
   data.lambda = m_lambda;
   cubic_style_precomputation(origV, F, data);
   
-  int maxIters = 10; 
+  int maxIters = 20; 
 	double maxRelativeDiff; // largest change in a single iteration (value is relative to difference from undeformed vertices)
 	int iters = 0;
 	for(; iters < maxIters; iters++){
@@ -31,7 +31,7 @@ MatrixXd get_cube_style(MatrixXd origV, MatrixXi F, double m_lambda){
 			 	break;
 		 }
 	}
-  cout << "Total iters: " << iters << endl; //debug stop condition
+  
   return V;
 }
 
