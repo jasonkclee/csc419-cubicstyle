@@ -4,6 +4,7 @@
 #include <igl/cotmatrix.h>
 #include <igl/massmatrix.h>
 #include <igl/per_vertex_normals.h>
+#include <igl/arap_rhs.h>
 
 using namespace std;
 using namespace Eigen;
@@ -68,10 +69,8 @@ void cubic_style_precomputation(const Eigen::MatrixXd& V, const Eigen::MatrixXi&
 	// init lists
 	cout << "Init lists\n";
 	data.v_to_faces = new vector<vector<int>*>();
-	data.v_to_adj = new vector<set<int>*>();
 	for(int i = 0; i < V.rows(); i++){
 		data.v_to_faces->push_back(new vector<int>());
-		data.v_to_adj->push_back(new set<int>());
 	}
 	data.v_to_D = new vector<MatrixXd>();
 	data.v_to_W = new vector<MatrixXd>();
@@ -80,15 +79,12 @@ void cubic_style_precomputation(const Eigen::MatrixXd& V, const Eigen::MatrixXi&
 	data.local_u.setRandom();
 	data.local_z.setRandom();
 	
-	data.local_p = VectorXd::Ones(V.rows()) * 0.0001;
+	data.local_p = VectorXd::Ones(V.rows()) * 0.0001; // values according to paper
 	data.local_T_incr = 2.0;
 	data.local_T_decr = 2.0;
 	data.local_mu = 10;
 	
-	
-	SparseMatrixd mMass;
-	igl::massmatrix(V, F, igl::MASSMATRIX_TYPE_BARYCENTRIC, mMass);
-	data.local_a = mMass.diagonal();
+	igl::massmatrix(V, F, igl::MASSMATRIX_TYPE_BARYCENTRIC, data.mass);
 	
 	cout << "get map of vertex to list of faces\n";
 	// get map of vertex to list of faces
@@ -96,15 +92,16 @@ void cubic_style_precomputation(const Eigen::MatrixXd& V, const Eigen::MatrixXi&
 		for(int k = 0; k < 3; k++){
 			int v = F(i,k);
 			data.v_to_faces->at(v)->push_back(i);
-			data.v_to_adj->at(F(i, (k+1)%3))->insert(v);
-			data.v_to_adj->at(F(i, (k+2)%3))->insert(v);
 		}
 	}
 	
 	SparseMatrixd W;
 	igl::cotmatrix(V,F,W);
-	//W *= -1;
+	W *= -1;
 	data.cot = W;
+	
+	// Use igl ARAP (check arap_linear_block)
+	igl::arap_rhs(V,F,3,igl::ARAP_ENERGY_TYPE_SPOKES_AND_RIMS, data.arap);
 	
 	data.solver.compute(data.cot);
 	if(data.solver.info() != Success){

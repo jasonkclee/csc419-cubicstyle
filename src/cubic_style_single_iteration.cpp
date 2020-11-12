@@ -29,9 +29,6 @@ Matrix3d calc_rot(MatrixXd D, Vector3d n, MatrixXd W, double p, MatrixXd defD, V
 	Matrix3d U = svd.matrixU();
 	Matrix3d V = svd.matrixV();
 	Matrix3d out = V * U.transpose();
-	if(out.determinant() < 0){ // prevent neg deter?
-		U.col(2) *= -1;
-	}
 	return V * U.transpose();
 }
 
@@ -40,7 +37,7 @@ Vector3d calc_z(Matrix3d R, Vector3d n, Vector3d u, double lambda, double a, dou
 	Vector3d k = Vector3d::Ones() * lambda * a / p;
 	
 	Vector3d out = Vector3d::Zero();
-	Vector3d d1 = x - k;
+	Vector3d d1 = x - k; // Do "shrinkage" from section 4.4.3 from ADMM paper
 	Vector3d d2 = -x - k;
 	for(int i = 0; i < 3; i++){
 		d1(i) = max(0.0, d1(i));
@@ -51,7 +48,7 @@ Vector3d calc_z(Matrix3d R, Vector3d n, Vector3d u, double lambda, double a, dou
 
 // Return set of rotations to use 
 void localStep(cubic_style_data & data, Eigen::MatrixXd & U, Eigen::MatrixXd& rots){
-	int maxIters = 5;
+	int maxIters = 10;
 	
 	
 	for(int iter = 0; iter < maxIters; iter ++){
@@ -65,9 +62,8 @@ void localStep(cubic_style_data & data, Eigen::MatrixXd & U, Eigen::MatrixXd& ro
 			Vector3d n = data.N.row(i);
 			Vector3d u = data.local_u.row(i);
 			Vector3d z = data.local_z.row(i);
-			double a = data.local_a(i);
+			double a = data.mass.coeff(i,i);
 			double p = data.local_p(i);
-			
 			
 			
 			// calc rotation using Di, ~Di, Wi, p, ^ni , z
@@ -84,6 +80,7 @@ void localStep(cubic_style_data & data, Eigen::MatrixXd & U, Eigen::MatrixXd& ro
 			double r = (n_z-n_R*n).norm();
 			double s = (-p * (n_z - z)).norm();
 			
+			// update according to 3.4.1 section referred to from ADMM paper referenced
 			if(r > data.local_mu * s){
 				n_p = p * data.local_T_incr;
 				n_u /= data.local_T_incr; // adjust u
@@ -107,24 +104,43 @@ void localStep(cubic_style_data & data, Eigen::MatrixXd & U, Eigen::MatrixXd& ro
 
 // Return updated vertices
 void globalStep(cubic_style_data & data, Eigen::MatrixXd & U, Eigen::MatrixXd& rots){
-	// L * defU = b
+    // L * defU = b
 	// compute b
 	MatrixXd b = MatrixXd::Zero(U.rows(), 3);
+	VectorXd rotCol = VectorXd::Zero(9 * U.rows());
+	MatrixXd rotsT = rots;
+	
+	// need to flatten rots according to arap_rhs.h
+	int count = 0;
+	for(int i = 0; i < 3; i ++){
+		for(int j = 0; j < 3; j++){
+			for(int k = 0; k < U.rows(); k++){ // go through each matrix
+				rotCol(count) = rots(k*3 + j, i);
+				count ++;
+			}
+		}
+	}
+	
+	// Check arap_rhs for rot
+	VectorXd Bcol = data.arap * rotCol;
+	
+	/*  // NOT NEEDED, use igl arap functions instead
 	for(int i = 0; i < U.rows(); i++){
 		set<int>* adj = data.v_to_adj->at(i);
 		Matrix3d Ri = rots.block(i*3, 0, 3, 3);
+		
 		for(auto it = adj->begin(); it != adj->end(); ++it){
 			int v_adj = *it;
 			Matrix3d Rj = rots.block(v_adj*3, 0, 3, 3);
 			b.row(i) += (data.cot.coeff(i, v_adj) * 0.5 * (Ri + Rj) * (data.V.row(i) - data.V.row(v_adj)).transpose()).transpose();
+			
 		}
-	}
+	}*/
 	
 	
 	// solve each dim
 	for(int i = 0; i < 3; i++){
-		VectorXd bi = b.col(i);
-		
+		VectorXd bi = Bcol.block(i * U.rows(), 0, U.rows(), 1);
 		VectorXd x = data.solver.solve(bi);
 		
 		if(data.solver.info() != Success){
@@ -145,6 +161,7 @@ void globalStep(cubic_style_data & data, Eigen::MatrixXd & U, Eigen::MatrixXd& r
 // Outputs:
 // U #V by 3 list of new stylized mesh vertex positions
 void cubic_style_single_iteration( cubic_style_data & data, Eigen::MatrixXd & U){
+	
 	MatrixXd rots(3 * U.rows(), 3);
 	// do local step for rotations
 	localStep(data, U, rots);
